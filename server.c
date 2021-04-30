@@ -12,12 +12,6 @@
 
 #include "common.h"
 
-// TODO Since this struct is used by both the server and client, perhaps we
-// should move it elsewhere?
-struct __attribute__((__packed__)) msg_header {
-    uint64_t msg_len;
-    uint16_t msg_type;
-};
 
 /* TODO: we should implement a smarter read() function that will handle
  * different incoming message sizes. */
@@ -32,7 +26,31 @@ struct __attribute__((__packed__)) msg_header {
  *  * length - size of the incoming message. If less than 'length' bytes are
  *             received, we'll keep retrying the read() operation.
  */
-int read_len(int fd, void *buf, size_t length);
+ssize_t read_len(int fd, void *buf, size_t length)
+{
+    LOG("FD: %d - BYTES: %zu\n", fd, length);
+
+    size_t total_read = 0;
+    while (total_read < length) {
+        
+        ssize_t bytes_read = read(fd, buf +  total_read, length - total_read);
+
+        if (bytes_read == -1) {
+            perror("read");
+            return -1;
+        }
+        else if (bytes_read == 0) {
+            return total_read;
+        }
+
+        total_read += bytes_read;
+    }
+
+    return total_read;
+
+
+
+}
 
 int main(int argc, char *argv[]) {
 
@@ -90,18 +108,33 @@ int main(int argc, char *argv[]) {
 
         while (true) {
             /* Inner loop: this keeps pulling data from the client */
-            char buf[128] = { 0 };
-            ssize_t bytes = 0;
-            bytes = read(client_fd, buf, 128);
+
+            struct msg_header header;
+
+            read_len(client_fd, &header, sizeof(struct msg_header));
+
+            if (header.msg_type != 0) {
+                LOG("Header msg type is not 0: %d\n", header.msg_type);
+                break;
+            }
+
+            char* buf = calloc(1, header.msg_len);
+           
+            ssize_t bytes = read_len(client_fd, buf, header.msg_len);
+
             if (bytes == -1) {
                 perror("read");
+                free(buf);
                 break;
             } else if (bytes == 0) {
                 /* EOF */
                 LOG("%s\n", "Reached end of stream");
+                free(buf); // TODO: find a better way than this
                 break;
             }
             printf("-> %s\n", buf);
+
+            free(buf);
         }
     }
 

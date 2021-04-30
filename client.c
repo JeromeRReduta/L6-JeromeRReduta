@@ -10,12 +10,29 @@
 
 #include "common.h"
 
-// TODO Since this struct is used by both the server and client, perhaps we
-// should move it elsewhere?
-struct __attribute__((__packed__)) msg_header {
-    uint64_t msg_len;
-    uint16_t msg_type;
-};
+ssize_t write_len(int fd, void *buf, size_t length)
+{
+
+    size_t total_written = 0;
+
+    while (total_written < length) {
+        ssize_t bytes_written = write(fd, buf + total_written, length - total_written);
+
+        if(bytes_written == -1) {
+            perror("read");
+            return -1;
+
+        }   
+        else if (bytes_written == 0) {
+            return total_written;
+        }
+
+        total_written += bytes_written;
+    }
+    return total_written;
+
+}
+
 
 int main(int argc, char *argv[]) {
 
@@ -57,13 +74,16 @@ int main(int argc, char *argv[]) {
 
     printf("Welcome. Please type your message below, or press ^D to quit.\n");
 
+    char *buf = NULL;
+    size_t buf_sz;
+
     while (true) {
         printf("message> ");
-        fflush(stdout);
+        fflush(stdout); // Essential to make the things we want to print print out exactly
 
-        char buf[128] = { 0 };
-        char *str = fgets(buf, 128, stdin);
-        if (str == NULL) {
+        ssize_t bytes_read = getline(&buf, &buf_sz, stdin); // note: we don't free here - we free in server - otherwise will have dbl free
+      
+        if (bytes_read == -1) { // Case: getline error
             LOG("%s", "Reached EOF! Quitting.\n");
             break;
         }
@@ -71,26 +91,13 @@ int main(int argc, char *argv[]) {
         /* Remove newline characters */
         strtok(buf, "\r\n");
 
-        ssize_t bytes_written = 0;
-        size_t bytes_left = sizeof(buf);
-        char *write_ptr = buf;
-        do {
-            // TODO: (STEP 1) once you're ready to see what happens when you
-            // don't write the entire message, change 'sizeof(buf)' to 1. Then
-            // watch what happens on the server.
-            bytes_written = write(socket_fd, write_ptr, sizeof(buf));
-            if (bytes_written == -1) {
-                perror("write");
-                return 1;
-            }
+        struct msg_header header = {0};
+        header.msg_len = strlen(buf) + 1;
 
-            // TODO: (STEP 2) add a sleep for 1 second here to amplify the
-            // effect. This will cause only one byte to be sent at a time.
-            bytes_left = bytes_left - bytes_written;
-            write_ptr += bytes_written;
-            LOG("Wrote %zd bytes\n", bytes_written);
-        } while (bytes_left > 0);
+
+        write_len(socket_fd, &header, sizeof(struct msg_header)); // send header to server
+        write_len(socket_fd, buf, header.msg_len); // send message to server
+
     }
-
     return 0;
 }

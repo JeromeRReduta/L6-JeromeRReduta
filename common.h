@@ -8,4 +8,10 @@
         do { if (LOG_ON) fprintf(stderr, "%s:%d:%s(): " fmt, __FILE__, \
                                 __LINE__, __func__, __VA_ARGS__); } while (0)
 
+struct __attribute__((__packed__)) msg_header {
+    uint64_t msg_len;
+    uint16_t msg_type;
+};
+
+
 #endif
